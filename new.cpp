@@ -222,10 +222,10 @@ void iDraw()
         iShowLoadedImage(pipe_x[i], pipe_gap_y[i] + PIPE_GAP, &upperPipeImages[i]);
     }
 
-    iSetColor(255, 255, 255);
+    iSetColor(0, 0, 0);
     char scoreText[20];
     sprintf(scoreText, "Score: %d", score);
-    iText(20, SCREEN_HEIGHT - 40, scoreText, GLUT_BITMAP_TIMES_ROMAN_24);
+    iText(20, SCREEN_HEIGHT - 140, scoreText, GLUT_BITMAP_TIMES_ROMAN_24);
 
     if (gameOver) {
         iSetColor(255, 0, 0);
@@ -264,8 +264,8 @@ int main(int argc, char *argv[])
     srand((unsigned)time(NULL));
     glutInit(&argc, argv);
 
-    iLoadImage(&BG, "background.png");
-    iScaleImage(&BG, 4.0);
+    iLoadImage(&BG, "background.jpg");
+    iScaleImage(&BG, 2.0);
 
     for (int i = 0; i < N_FRAMES; i++) {
         char filename[50];
@@ -290,8 +290,8 @@ int main(int argc, char *argv[])
     }
 
     for (int i = 0; i < N_PIPES; i++) {
-        iLoadImage(&lowerPipeImages[i], "lowerpipe.png");
-        iLoadImage(&upperPipeImages[i], "upperpipe.png");
+        iLoadImage(&lowerPipeImages[i], "l.png");
+        iLoadImage(&upperPipeImages[i], "u.png");
     }
 
     resetGame();

@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <windows.h>
+#include <mmsystem.h> 
+
 
 // ================== GAME CONSTANTS ==================
 #define N_CLOUDS 4
@@ -21,9 +23,35 @@
 #define GRAVITY 0.5f
 #define JUMP_VELOCITY 10.0f
 #define PIPE_SPEED 7
-#define N_FRAMES 8
+#define N_FRAMES 5
+#define N_BEAMS 3
+#define BEAM_WIDTH 10
+#define BEAM_HEIGHT 60
+#define BEAM_VELOCITY 8
+#define N_GERMS 4
+#define GERM_WIDTH 40
+#define GERM_HEIGHT 40
+#define GERM_SPEED 6
 
-// ================== GLOBAL VARIABLES ==================
+
+
+//germs
+float germ_x[N_GERMS];
+float germ_y[N_GERMS];
+bool germ_active[N_GERMS] = {false};
+Image germImage;
+
+int germSpawnTimer;
+
+
+Image scoreDisplayImage;  
+float beam_x[N_BEAMS];
+float beam_y[N_BEAMS];
+bool beam_active[N_BEAMS] = {false};
+
+int beamSpawnTimer;
+
+// ==================GLOBAL VARIABLES ==================
 
 // Game state
 int gameState = 0; // 0 = Home, 1 = Game, 2 = Help, 3 = Continue, 4 = Score, 5 = Level
@@ -84,6 +112,71 @@ int animTimer, physicsTimer, coinAnimTimer;
 int scoreScrollY = 0; // Vertical scroll offset for score page
 const int scoreContentHeight = 1600;
 Image scoreImage;
+   
+
+//sound
+
+
+void spawnGerms()
+{
+    for (int i = 0; i < N_GERMS; i++) {
+        germ_x[i] = SCREEN_WIDTH + i * 300; // spaced out horizontally
+        germ_y[i] = 100 + rand() % (SCREEN_HEIGHT - 200);
+        germ_active[i] = true;
+    }
+}
+
+void updateGerms()
+{
+    for (int i = 0; i < N_GERMS; i++) {
+        if (!germ_active[i]) continue;
+
+        germ_x[i] -= GERM_SPEED;
+        if (germ_x[i] + GERM_WIDTH < 0) {
+            germ_x[i] = SCREEN_WIDTH;
+            germ_y[i] = 100 + rand() % (SCREEN_HEIGHT - 200);
+        }
+
+        // Collision with bird
+      if (!gameOver && bird_x + BIRD_WIDTH > germ_x[i] && bird_x < germ_x[i] + GERM_WIDTH &&
+            bird_y + BIRD_HEIGHT > germ_y[i] && bird_y < germ_y[i] + GERM_HEIGHT) {
+            gameOver = true;
+            bird_velocity = 0; // stop bird movement
+            iPauseTimer(physicsTimer);
+            PlaySound(NULL, 0, 0);
+            PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+            germ_active[i] = false;
+        }
+    }
+}
+
+
+void spawnBeams()
+{
+    float baseY = 100 + rand() % (SCREEN_HEIGHT - 200);
+    float baseX = SCREEN_WIDTH;
+
+    for (int i = 0; i < N_BEAMS; i++) {
+        beam_x[i] = baseX + i * (BEAM_WIDTH + 30); // horizontal spacing
+        beam_y[i] = baseY + i * 70; // vertical spacing
+        beam_active[i] = true;
+    }
+}
+
+void updateBeams()
+{
+    for (int i = 0; i < N_BEAMS; i++) {
+        if (!beam_active[i]) continue;
+
+        beam_x[i] -= BEAM_VELOCITY;
+        if (beam_x[i] + BEAM_WIDTH < 0) {
+            beam_active[i] = false;
+        }
+    }
+}
+
+
+
 
 // ================== GAME FUNCTIONS ==================
 
@@ -118,7 +211,7 @@ void resetGame()
         coin_x[i] = SCREEN_WIDTH + i * 300;
         coin_y[i] = 100 + rand() % (SCREEN_HEIGHT - 200);
     }
-
+  spawnBeams();
     score = 0;
     gameOver = false;
     iResumeTimer(physicsTimer);
@@ -127,7 +220,7 @@ void resetGame()
 void updateClouds()
 {
     for (int i = 0; i < N_CLOUDS; i++) {
-        cloud_x[i] -= 1;
+        cloud_x[i] -= 2;
         if (cloud_x[i] + 300 < 0) {
             cloud_x[i] = SCREEN_WIDTH;
         }
@@ -157,6 +250,10 @@ void updateBirdAnimation()
     flyingFrame = (flyingFrame + 1) % N_FRAMES;
 }
 
+
+
+
+
 void updateGame()
 {
     if (gameOver) return;
@@ -169,6 +266,18 @@ void updateGame()
         bird_y = 0;
         gameOver = true;
         iPauseTimer(physicsTimer);
+        PlaySound(NULL, 0, 0); 
+        PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+    }
+     for (int i = 0; i < N_BEAMS; i++) {
+        if (beam_active[i] &&
+            bird_x + BIRD_WIDTH > beam_x[i] && bird_x < beam_x[i] + BEAM_WIDTH &&
+            bird_y + BIRD_HEIGHT > beam_y[i] && bird_y < beam_y[i] + BEAM_HEIGHT) {
+            gameOver = true;
+            iPauseTimer(physicsTimer);
+            PlaySound(NULL, 0, 0);
+            PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+        }
     }
 
     if (bird_y + BIRD_HEIGHT > SCREEN_HEIGHT) {
@@ -210,6 +319,8 @@ void updateGame()
             (bird_y < pipe_gap_y[i] || bird_y + BIRD_HEIGHT > pipe_gap_y[i] + PIPE_GAP)) {
             gameOver = true;
             iPauseTimer(physicsTimer);
+             PlaySound(NULL, 0, 0); 
+            PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
         }
 
         if (!scoreCountedPerPipe[i] && pipe_x[i] + PIPE_WIDTH < bird_x) {
@@ -224,6 +335,8 @@ void updateGame()
             score += 1;
             coin_x[i] = SCREEN_WIDTH;
             coin_y[i] = 100 + rand() % (SCREEN_HEIGHT - 200);
+               
+             PlaySound(TEXT("coin_collect.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
         }
     }
 }
@@ -245,8 +358,19 @@ void iDraw()
         iShowLoadedImage(levelX, levelY, hoverLevel ? &levelHover : &level);
     }
     else if (gameState == 1) {
+
+       
+        
+         for (int i = 0; i < N_BEAMS; i++) {
+            if (beam_active[i]) {
+                iSetColor(255, 0, 0); // red color
+                iFilledRectangle((int)beam_x[i], (int)beam_y[i], BEAM_WIDTH, BEAM_HEIGHT);
+            }
+        }
         // Game screen (Flappy Bird)
-        iShowLoadedImage(0, 0, &BG);
+        // iShowLoadedImage(0, 0, &BG);
+         iSetColor(135, 206, 235); // RGB for sky blue
+        iFilledRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
         for (int i = 0; i < N_CLOUDS; i++) {
             iShowLoadedImage((int)cloud_x[i], (int)cloud_y[i], &cloudImages[i]);
         }
@@ -256,6 +380,12 @@ void iDraw()
        if (!gameOver) {
             iShowLoadedImage((int)bird_x, (int)bird_y, &birdFrames[flyingFrame]);
         }
+
+         for (int i = 0; i < N_GERMS; i++) {
+            if (germ_active[i]) {
+                iShowLoadedImage((int)germ_x[i], (int)germ_y[i], &germImage);
+            }
+        }  
         for (int i = 0; i < N_PIPES; i++) {
             iShowLoadedImage(pipe_x[i], 0, &lowerPipeImages[i]);
             iShowLoadedImage(pipe_x[i], pipe_gap_y[i] + PIPE_GAP, &upperPipeImages[i]);
@@ -263,14 +393,14 @@ void iDraw()
 
 
       
-            
+           
     
 
 
         iSetColor(0,0,0);
         char scoreText[20];
-        sprintf(scoreText, "Score: %d", score);
-        iText(20, SCREEN_HEIGHT - 100, scoreText, GLUT_BITMAP_TIMES_ROMAN_24);
+        sprintf(scoreText, "Score:This is medium %d", score);
+      iText(10, SCREEN_HEIGHT - 130, scoreText);
         if (gameOver) {
          
             int imgX = SCREEN_WIDTH / 2 - 500; 
@@ -350,13 +480,16 @@ void iKeyboard(unsigned char key)
     else if (gameState == 1) {
         if (key == ' ') {
             if (!gameOver) bird_velocity = JUMP_VELOCITY;
-        }
+             PlaySound(NULL, 0, 0);
+              PlaySound(TEXT("flappy_jump.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT | SND_NOSTOP);
+        
+            }
         else if (key == 'r' || key == 'R') {
             resetGame();
         }
-            else if (key == 27) { // ESC key
+            else if (key == 27) { 
             if (gameOver) {
-                gameState = 0; // Back to main menu
+                gameState = 0; 
                 iPauseTimer(physicsTimer);
             }
         }
@@ -465,7 +598,8 @@ int main(int argc, char *argv[])
     glutInit(&argc, argv);
 
     // Load homepage 
-    
+       iLoadImage(&germImage, "kit (1).png"); // Load germ image
+    iResizeImage(&germImage, GERM_WIDTH, GERM_HEIGHT);
        iLoadImage(&helpImage, "helpbg.png"); 
    
         iScaleImage(&helpImage, 0.66);
@@ -477,6 +611,9 @@ int main(int argc, char *argv[])
      iLoadImage(&gameOverImage, "gameoverpage.png");
     iScaleImage(&gameOverImage, 1.0);
     iLoadImage(&groundImage, "ground.png"); 
+
+       iLoadImage(&scoreDisplayImage, "scr.png");
+    iScaleImage(&scoreDisplayImage, 1.0);
 
 int newWidth = SCREEN_WIDTH;
 int newHeight = 100;
@@ -511,13 +648,13 @@ iResizeImage(&groundImage, newWidth, newHeight);
     iScaleImage(&levelHover, 0.30);
 
     // Load game resources
-    iLoadImage(&BG, "background.png");
+    iLoadImage(&BG, "new2.jpg");
     iScaleImage(&BG, 1.0);
     for (int i = 0; i < N_FRAMES; i++) {
         char filename[50];
-        sprintf(filename, "tile00%d.png", i);
+        sprintf(filename, "bird (%d).png", i+1);
         iLoadImage(&birdFrames[i], filename);
-        iResizeImage(&birdFrames[i], BIRD_WIDTH+20, BIRD_HEIGHT+20);
+        iResizeImage(&birdFrames[i], BIRD_WIDTH+10, BIRD_HEIGHT+10);
     }
     for (int i = 0; i < N_COINS; i++) {
         for (int f = 0; f < COIN_FRAMES; f++) {
@@ -538,11 +675,16 @@ iResizeImage(&groundImage, newWidth, newHeight);
     }
 
     resetGame();
+ spawnGerms();
+    iSetTimer(8, updateClouds);
+    animTimer = iSetTimer(80, updateBirdAnimation);
+    physicsTimer = iSetTimer(20, updateGame);
+      iPauseTimer(physicsTimer);
+    iSetTimer(20, updateCoins);
+        iSetTimer(20, updateBeams);
+         iSetTimer(20, updateGerms);
+    beamSpawnTimer = iSetTimer(1000, spawnBeams);
 
-    iSetTimer(10, updateClouds);
-    animTimer = iSetTimer(100, updateBirdAnimation);
-    physicsTimer = iSetTimer(15, updateGame);
-    iSetTimer(10, updateCoins);
     coinAnimTimer = iSetTimer(100, updateCoinAnimation);
 
     iInitialize(SCREEN_WIDTH, SCREEN_HEIGHT, "Flappy Bird");
