@@ -8,17 +8,17 @@
 // ================== GAME CONSTANTS ==================
 #define N_CLOUDS 4
 #define N_PIPES 8
-#define N_BEAM_GROUP 3 // FIX: Set to match N_BEAMS
-#define SCREEN_WIDTH 1600
-#define SCREEN_HEIGHT 768
-#define N_COINS 5
+#define N_BEAM_GROUP 5 // FIX: Set to match N_BEAMS
+#define SCREEN_WIDTH 1300
+#define SCREEN_HEIGHT 704
+#define N_COINS 10
 #define COIN_WIDTH 30
 #define COIN_HEIGHT 30
-#define COIN_SPEED 7
+#define COIN_SPEED 9
 #define COIN_FRAMES 6
 #define BIRD_WIDTH 50
 #define BIRD_HEIGHT 50
-#define PIPE_WIDTH 80
+#define PIPE_WIDTH 70
 #define PIPE_GAP 250
 #define GRAVITY 0.5f
 #define JUMP_VELOCITY 10.0f
@@ -27,13 +27,17 @@
 #define N_BEAMS 3
 #define BEAM_WIDTH 20
 #define BEAM_HEIGHT 10
-#define BEAM_VELOCITY 8
+#define BEAM_VELOCITY 12
 #define N_GERMS 2
 #define GERM_WIDTH 40
 #define GERM_HEIGHT 40
-#define GERM_SPEED 6
+#define GERM_SPEED 7
 #define GAME_STATE_LEVEL_SELECT 6
 #define GERM_FRAMES 3
+#ifndef MAX_TIMERS
+#define MAX_TIMERS 20
+
+#endif
 
 // Level button positions and sizes
 int easyX = 500, easyY = 500;
@@ -48,12 +52,32 @@ int germAnimTimer;
 bool hoverEasy = false;
 bool hoverMedium = false;
 bool hoverHard = false;
+
 bool isHardLevel = false;
+bool  isGamePaused = false;
+
+
+Image backBtn, backBtnHover;
+int backBtnX = 125, backBtnY = 50;
+int backBtnW = 125, backBtnH = 50;
+bool hoverBack = false;
+
+
 
 float germ_x[N_GERMS];
 float germ_y[N_GERMS];
 bool germ_active[N_GERMS] = {false};
 float ground_x = 0;
+
+float rectAngle1 = 0.0f;
+float rectAngle2 = 180.0f; // Opposite side of circle
+float rectAngularVelocity = 2.0f; // degrees per frame or timer tick
+float circleCenterX = SCREEN_WIDTH / 2;
+float circleCenterY = SCREEN_HEIGHT / 2;
+float circleRadius = 150;
+int rectWidth = 60;
+int rectHeight = 30;
+
 
 int germSpawnTimer;
 
@@ -62,8 +86,7 @@ float beam_x[N_BEAMS];
 float beam_y[N_BEAMS];
 bool beam_active[N_BEAMS] = {false};
 
-float pipeRotationAngle[N_PIPES] = {0};
-float pipeRotationSpeed[N_PIPES] = {0};
+
 
 int beamSpawnTimer;
 
@@ -147,6 +170,178 @@ void updateAll();
 
 
 
+typedef struct {
+    char name[50];
+    int score;
+} HighScore;
+
+HighScore highScores[5];
+
+// Variables for name input after game over
+bool isEnteringName = false;
+char playerName[50] = "";
+int nameCharIndex = 0;
+
+
+
+
+void loadHighScores() {
+    FILE *file = fopen("highscores.txt", "r");
+    if (!file) {
+        // Initialize empty scores if file doesn't exist
+        for (int i = 0; i < 5; i++) {
+            strcpy(highScores[i].name, "---");
+            highScores[i].score = 0;
+        }
+        return;
+    }
+    for (int i = 0; i < 5; i++) {
+        if (fscanf(file, "%49s %d", highScores[i].name, &highScores[i].score) != 2) {
+            strcpy(highScores[i].name, "---");
+            highScores[i].score = 0;
+        }
+    }
+    fclose(file);
+}
+
+
+void updateRotatingRectangles()
+{
+    rectAngle1 += rectAngularVelocity;
+    if (rectAngle1 >= 360) rectAngle1 -= 360;
+
+    rectAngle2 += rectAngularVelocity;
+    if (rectAngle2 >= 360) rectAngle2 -= 360;
+
+    // Calculate positions
+    float rad_1 = rectAngle1 * 3.14159265f / 180.0f;
+    float rad_2 = rectAngle2 * 3.14159265f / 180.0f;
+
+    float rect1X = circleCenterX + circleRadius * cos(rad_1) - rectWidth / 2;
+    float rect1Y = circleCenterY + circleRadius * sin(rad_1) - rectHeight / 2;
+
+    float rect2X = circleCenterX + circleRadius * cos(rad_2) - rectWidth / 2;
+    float rect2Y = circleCenterY + circleRadius * sin(rad_2) - rectHeight / 2;
+
+    // Collision detection with bird
+    bool collision1 = (bird_x < rect1X + rectWidth) && (bird_x + BIRD_WIDTH > rect1X) &&
+                      (bird_y < rect1Y + rectHeight) && (bird_y + BIRD_HEIGHT > rect1Y);
+
+    bool collision2 = (bird_x < rect2X + rectWidth) && (bird_x + BIRD_WIDTH > rect2X) &&
+                      (bird_y < rect2Y + rectHeight) && (bird_y + BIRD_HEIGHT > rect2Y);
+
+    if ((collision1 || collision2) && !gameOver) {
+        gameOver = true;
+        iPauseTimer(physicsTimer);
+        if (!gameOverSoundPlayed) {
+            PlaySound(NULL, 0, 0);
+            PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+            gameOverSoundPlayed = true;
+        }
+    }
+}
+
+
+
+// Function to save high scores to file
+void saveHighScores() {
+    FILE *file = fopen("highscores.txt", "w");
+    if (!file) return;
+    for (int i = 0; i < 5; i++) {
+        fprintf(file, "%s %d\n", highScores[i].name, highScores[i].score);
+    }
+    fclose(file);
+}
+
+// Insert new score into highScores array if qualifies
+void addHighScore(const char *name, int score) {
+    // Find position to insert
+    int pos = 5;
+    for (int i = 0; i < 5; i++) {
+        if (score > highScores[i].score) {
+            pos = i;
+            break;
+        }
+    }
+    if (pos == 5) return; // Not high enough
+
+    // Shift lower scores down
+    for (int i = 5 - 1; i > pos; i--) {
+        highScores[i] = highScores[i - 1];
+    }
+    // Insert new score
+    strncpy(highScores[pos].name, name, 49);
+    highScores[pos].name[49] = '\0';
+    highScores[pos].score = score;
+
+    saveHighScores();
+}
+
+
+
+
+
+void safePauseTimer(int timerId) {
+    if (timerId >= 0 && timerId < MAX_TIMERS) {
+        iPauseTimer(timerId);
+    }
+}
+
+// Keep only one definition of safeResumeTimer
+void safeResumeTimer(int timerId) {
+    if (timerId >= 0 && timerId < MAX_TIMERS) {
+        iResumeTimer(timerId);
+    }
+}
+
+// Keep only one definition of iGetDeltaTime
+int iGetDeltaTime() {
+    static int oldT = -1;
+    int newT = glutGet(GLUT_ELAPSED_TIME);
+    if (oldT == -1) oldT = newT;
+    int delta = newT - oldT;
+    oldT = newT;
+    return delta;
+}
+
+// Fix iPlaySound to avoid Unicode mismatch error:
+// Option 1: If your project is Unicode-enabled, keep this:
+void iPlaySound(const char *filename, bool loop = false)
+{
+#ifdef UNICODE
+    // Convert const char* to wchar_t* for Unicode builds
+    wchar_t wfilename[MAX_PATH];
+    MultiByteToWideChar(CP_ACP, 0, filename, -1, wfilename, MAX_PATH);
+    PlaySound(NULL, 0, 0); // Stop any currently playing sound
+    PlaySound(wfilename, NULL, SND_FILENAME | SND_ASYNC | (loop ? SND_LOOP : 0));
+#else
+    // Use const char* directly for ANSI builds
+    PlaySound(NULL, 0, 0); // Stop any currently playing sound
+    PlaySound(filename, NULL, SND_FILENAME | SND_ASYNC | (loop ? SND_LOOP : 0));
+#endif
+}
+
+void iPauseGame() {
+    isGamePaused = true;
+    safePauseTimer(animTimer);
+    safePauseTimer(coinAnimTimer);
+    safePauseTimer(germAnimTimer);
+    safePauseTimer(physicsTimer);
+    safePauseTimer(beamSpawnTimer);
+}
+
+
+void iResumeGame() {
+    isGamePaused = false;
+    safeResumeTimer(animTimer);
+    safeResumeTimer(coinAnimTimer);
+    safeResumeTimer(germAnimTimer);
+    safeResumeTimer(physicsTimer);
+    safeResumeTimer(beamSpawnTimer);
+}
+
+
+
 void updateGround()
 {
     ground_x -= PIPE_SPEED; // Move ground left at pipe speed
@@ -199,36 +394,12 @@ void updateGerms()
 void spawnBeams()
 {
     float baseX = SCREEN_WIDTH;
+    float lineY = rand() % (SCREEN_HEIGHT - 200);// Fixed y position for the line of beams
+
     for (int i = 0; i < N_BEAMS; i++) {
-        float candidateY;
-        bool overlaps;
-        int attempts = 0;
-
-        do {
-            overlaps = false;
-            candidateY = 100 + rand() % (SCREEN_HEIGHT - 200);
-
-            for (int group = 0; group < N_PIPES / 4; group++) {
-                int basePipeIndex = group * 4;
-                int gapY = pipe_gap_y[basePipeIndex];
-                int gapTop = gapY + PIPE_GAP;
-
-                if (candidateY + BEAM_HEIGHT > gapY && candidateY < gapTop) {
-                    overlaps = true;
-                    break;
-                }
-            }
-            attempts++;
-            if (attempts > 10) break;
-        } while (overlaps);
-
-        beam_x[i] = baseX + i * (BEAM_WIDTH + 30);
-        beam_y[i] = candidateY;
+        beam_x[i] = baseX + i * (BEAM_WIDTH + 50); // space beams evenly with 50 px gap
+        beam_y[i] = lineY;
         beam_active[i] = true;
-    }
-    // FIX: Corrected loop to use N_BEAMS
-    for (int i = N_BEAMS; i < N_BEAMS; i++) {
-        beam_active[i] = false;
     }
 }
 
@@ -239,7 +410,7 @@ void updateBeams()
 
         beam_x[i] -= BEAM_VELOCITY;
         if (beam_x[i] + BEAM_WIDTH < 0) {
-            beam_active[i] = false;
+            beam_x[i] = SCREEN_WIDTH + (N_BEAMS - 1) * (BEAM_WIDTH + 50); // reset to right end of line
         }
     }
 }
@@ -248,21 +419,8 @@ void resetGame()
 {
     bird_y = 400;
     bird_velocity = 0;
-    gameOverSoundPlayed = false; // FIX: Reset sound flag
-
-    for (int i = 0; i < N_PIPES; i++) {
-        pipeRotationAngle[i] = 0;
-        pipeRotationSpeed[i] = 0;
-    }
-
-    int totalGroups = N_PIPES / 4;
-    for (int group = 0; group < totalGroups; group++) {
-        bool rotateGroup = ((group + 1) % 3 == 0);
-        for (int i = 0; i < 4; i++) {
-            int idx = group * 4 + i;
-            pipeRotationSpeed[idx] = rotateGroup ? 1.0f : 0.0f;
-        }
-    }
+    gameOverSoundPlayed = false;
+      int totalGroups = N_PIPES / 4;
 
     int groupSpacing = SCREEN_WIDTH / 2;
 
@@ -297,7 +455,6 @@ void resetGame()
     gameOver = false;
     iResumeTimer(physicsTimer);
 }
-
 void updateClouds()
 {
     for (int i = 0; i < N_CLOUDS; i++) {
@@ -343,6 +500,8 @@ void updateAll()
     updateGround(); 
 }
 
+// ... existing code ...
+
 void updateGame()
 {
     if (gameOver) return;
@@ -351,17 +510,12 @@ void updateGame()
     if (bird_velocity < -2 * JUMP_VELOCITY) bird_velocity = -2 * JUMP_VELOCITY;
     bird_y += bird_velocity;
 
-    for (int i = 0; i < N_PIPES; i++) {
-        pipeRotationAngle[i] += pipeRotationSpeed[i];
-        if (pipeRotationAngle[i] >= 360.0f) pipeRotationAngle[i] -= 360.0f;
-        else if (pipeRotationAngle[i] < 0) pipeRotationAngle[i] += 360.0f;
-    }
-
+  
     if (bird_y < 0) {
         bird_y = 0;
         gameOver = true;
         iPauseTimer(physicsTimer);
-        if (!gameOverSoundPlayed) { // FIX: Play sound once
+        if (!gameOverSoundPlayed) {
             PlaySound(NULL, 0, 0);
             PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
             gameOverSoundPlayed = true;
@@ -374,7 +528,7 @@ void updateGame()
             bird_y + BIRD_HEIGHT > beam_y[i] && bird_y < beam_y[i] + BEAM_HEIGHT) {
             gameOver = true;
             iPauseTimer(physicsTimer);
-            if (!gameOverSoundPlayed) { // FIX: Play sound once
+            if (!gameOverSoundPlayed) {
                 PlaySound(NULL, 0, 0);
                 PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
                 gameOverSoundPlayed = true;
@@ -405,7 +559,7 @@ void updateGame()
                 pipe_x[idx] = baseX + i * (PIPE_WIDTH + 10);
                 pipe_gap_y[idx] = baseGapY + (i % 2) * 80;
 
-                int topPipeHeight = SCREEN_HEIGHT - (pipe_gap_y[idx] + PIPE_GAP); // FIX: Local declaration
+                int topPipeHeight = SCREEN_HEIGHT - (pipe_gap_y[idx] + PIPE_GAP);
                 if (topPipeHeight < 0) topPipeHeight = 0;
 
                 iResizeImage(&lowerPipeImages[idx], PIPE_WIDTH, pipe_gap_y[idx]);
@@ -417,12 +571,11 @@ void updateGame()
     }
 
     for (int i = 0; i < N_PIPES; i++) {
-        // Unchanged pipe collision logic as per user request
         if (bird_x + BIRD_WIDTH > pipe_x[i] && bird_x < pipe_x[i] + PIPE_WIDTH &&
             (bird_y < pipe_gap_y[i] || bird_y + BIRD_HEIGHT > pipe_gap_y[i] + PIPE_GAP)) {
             gameOver = true;
             iPauseTimer(physicsTimer);
-            if (!gameOverSoundPlayed) { // FIX: Play sound once
+            if (!gameOverSoundPlayed) {
                 PlaySound(NULL, 0, 0);
                 PlaySound(TEXT("game_over.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
                 gameOverSoundPlayed = true;
@@ -445,12 +598,15 @@ void updateGame()
         }
     }
 }
-
 // ================== DRAW FUNCTION ==================
 
 void iDraw()
 {
+  
     iClear();
+       if (gameState != 0) {
+        iShowLoadedImage(backBtnX, backBtnY, hoverBack ? &backBtnHover : &backBtn);
+    }
 
     if (gameState == 0) {
         iShowLoadedImage(0, 0, &background);
@@ -477,9 +633,11 @@ void iDraw()
     else if (gameState == 1) {
         iSetColor(135, 206, 235);
         iFilledRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
         for (int i = 0; i < N_CLOUDS; i++) {
             iShowLoadedImage((int)cloud_x[i], (int)cloud_y[i], &cloudImages[i]);
         }
+
         for (int i = 0; i < N_BEAMS; i++) {
             if (beam_active[i]) {
                 int centerX = (int)beam_x[i] + BEAM_WIDTH / 2;
@@ -499,27 +657,13 @@ void iDraw()
         for (int i = 0; i < N_COINS; i++) {
             iShowLoadedImage((int)coin_x[i], (int)coin_y[i], &coinFrames[i][coinFrameIndex[i]]);
         }
-       
-        for (int i = 0; i < N_PIPES; i++) {
-            double lowerCenterX = pipe_x[i] + PIPE_WIDTH / 2.0;
-            double lowerCenterY = pipe_gap_y[i] / 2.0;
-            double upperPipeY = pipe_gap_y[i] + PIPE_GAP;
-            double upperPipeHeight = SCREEN_HEIGHT - upperPipeY;
-            double upperCenterX = pipe_x[i] + PIPE_WIDTH / 2.0;
-            double upperCenterY = upperPipeY + upperPipeHeight / 2.0;
 
-            iRotate(lowerCenterX, lowerCenterY, pipeRotationAngle[i]);
-            iShowLoadedImage((int)(lowerCenterX - PIPE_WIDTH / 2), (int)(lowerCenterY - pipe_gap_y[i] / 2), &lowerPipeImages[i]);
-            iRotate(lowerCenterX, lowerCenterY, -pipeRotationAngle[i]);
-
-            iRotate(upperCenterX, upperCenterY, pipeRotationAngle[i]);
-            iShowLoadedImage((int)(upperCenterX - PIPE_WIDTH / 2), (int)(upperCenterY - upperPipeHeight / 2), &upperPipeImages[i]);
-            iRotate(upperCenterX, upperCenterY, -pipeRotationAngle[i]);
+        for (int i = 0; i < N_PIPES; i++) {iShowLoadedImage(pipe_x[i], 0, &lowerPipeImages[i]);
+        iShowLoadedImage(pipe_x[i], pipe_gap_y[i] + PIPE_GAP, &upperPipeImages[i]);
+            
         }
 
-
-        
-         if (!gameOver) {
+        if (!gameOver) {
             iShowLoadedImage((int)bird_x, (int)bird_y, &birdFrames[flyingFrame]);
         }
 
@@ -528,25 +672,74 @@ void iDraw()
                 iShowLoadedImage((int)germ_x[i], (int)germ_y[i], &germFrames[germFrameIndex]);
             }
         }
+  float rad_1 = rectAngle1 * 3.14159265f / 180.0f;
+        float rad_2 = rectAngle2 * 3.14159265f / 180.0f;
+
+        float rect1X = circleCenterX + circleRadius * cos(rad_1) - rectWidth / 2;
+        float rect1Y = circleCenterY + circleRadius * sin(rad_1) - rectHeight / 2;
+
+        float rect2X = circleCenterX + circleRadius * cos(rad_2) - rectWidth / 2;
+        float rect2Y = circleCenterY + circleRadius * sin(rad_2) - rectHeight / 2;
+
+        iSetColor(255, 0, 0); // red color
+        iFilledRectangle((int)rect1X, (int)rect1Y, rectWidth, rectHeight);
+        iFilledRectangle((int)rect2X, (int)rect2Y, rectWidth, rectHeight);  
 
 
-         iShowLoadedImage((int)ground_x, 0, &groundImage);
+        iShowLoadedImage((int)ground_x, 0, &groundImage);
         iShowLoadedImage((int)ground_x + SCREEN_WIDTH, 0, &groundImage);
 
         iSetColor(0, 0, 0);
         char scoreText[20];
-        // FIX: Dynamic score text
         if (isHardLevel)
             sprintf(scoreText, "Score: Hard %d", score);
         else
             sprintf(scoreText, "Score: Medium %d", score);
         iText(10, SCREEN_HEIGHT - 130, scoreText);
-        if (gameOver) {
-            int imgX = SCREEN_WIDTH / 2 - 500;
-            int imgY = SCREEN_HEIGHT / 2 - 150;
+
+        if (isEnteringName) {
+        // Dim the background with a semi-transparent black overlay
+        iSetColor(0, 0, 150); // RGBA, 150 alpha for transparency
+        iFilledRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Draw input box background
+        int boxWidth = 400;
+        int boxHeight = 100;
+        int boxX = (SCREEN_WIDTH - boxWidth) / 2;
+        int boxY = (SCREEN_HEIGHT - boxHeight) / 2;
+        iSetColor(50, 50, 50);
+        iFilledRectangle(boxX, boxY, boxWidth, boxHeight);
+
+        // Draw input box border
+        iSetColor(255, 255, 255);
+        iRectangle(boxX, boxY, boxWidth, boxHeight);
+
+        // Draw prompt text
+        iText(boxX + 20, boxY + boxHeight - 30, "Game Over! Enter your name:");
+
+        // Draw player name text
+        iText(boxX + 20, boxY + boxHeight / 2 - 10, playerName);
+
+        // Draw blinking cursor
+        static int blinkTimer = 0;
+        blinkTimer = (blinkTimer + 1) % 60; // roughly 1 second cycle at 60 FPS
+        if (blinkTimer < 30) {
+            int charWidth = 12;
+             int cursorX = boxX + 20 + (int)(strlen(playerName) * charWidth);
+            int cursorY = boxY + boxHeight / 2 - 10;
+            iLine(cursorX, cursorY, cursorX, cursorY + 20);
+        }
+
+        // Draw instructions
+        iText(boxX + 20, boxY + 10, "Press Enter to submit, Backspace to delete");
+    }
+
+
+      else  if (gameOver) {
+            int imgX = SCREEN_WIDTH / 2 - 400;
+            int imgY = SCREEN_HEIGHT / 2 - 250;
             iShowLoadedImage(imgX, imgY, &gameOverImage);
         }
-        
     }
     else if (gameState == 2) {
         iShowLoadedImage(0, SCREEN_HEIGHT - helpContentHeight + helpScrollY - 200, &helpImage);
@@ -559,6 +752,17 @@ void iDraw()
         if (scoreScrollY > scoreContentHeight - SCREEN_HEIGHT)
             scoreScrollY = scoreContentHeight - SCREEN_HEIGHT;
         iShowLoadedImage(0, SCREEN_HEIGHT - scoreContentHeight + scoreScrollY, &scoreImage);
+    // Draw high scores
+        iSetColor(255, 255, 255);
+        int startY = SCREEN_HEIGHT - 400;
+        iText(600, startY + 40, "High Scores:");
+        for (int i = 0; i < 5; i++) {
+            char buf[100];
+            sprintf(buf, "%d. %s - %d", i + 1, highScores[i].name, highScores[i].score);
+            iText(600, startY - i * 30, buf);
+        }
+    
+    
     }
     else if (gameState == 5) {
         iText(300, 300, "Level Screen. Press 'H' to return.");
@@ -569,6 +773,26 @@ void iDraw()
 
 void iMouseMove(int mx, int my)
 {
+    // In iGraphics.h, iMouseY = iScreenHeight - my, so use mx, my directly as they are already transformed
+    // Reset hover states
+    hoverPlay = false;
+    hoverHelp = false;
+    hoverExit = false;
+    hoverContinue = false;
+    hoverScore = false;
+    hoverLevel = false;
+    hoverEasy = false;
+    hoverMedium = false;
+    hoverHard = false;
+    hoverBack = false;
+
+    // Check for back button hover in all states except main menu
+    if (gameState != 0) {
+        hoverBack = (mx >= backBtnX && mx <= backBtnX + backBtnW &&
+                     my >= backBtnY && my <= backBtnY + backBtnH);
+    }
+
+    // Check for main menu button hovers
     if (gameState == 0) {
         hoverPlay = (mx >= playX && mx <= playX + btnW && my >= playY && my <= playY + btnH);
         hoverHelp = (mx >= helpX && mx <= helpX + btnW && my >= helpY && my <= helpY + btnH);
@@ -577,6 +801,7 @@ void iMouseMove(int mx, int my)
         hoverScore = (mx >= scoreX && mx <= scoreX + btnW && my >= scoreY && my <= scoreY + btnH);
         hoverLevel = (mx >= levelX && mx <= levelX + btnW && my >= levelY && my <= levelY + btnH);
     }
+    // Check for level select button hovers
     else if (gameState == GAME_STATE_LEVEL_SELECT) {
         hoverEasy = (mx >= easyX && mx <= easyX + levelBtnW && my >= easyY && my <= easyY + levelBtnH);
         hoverMedium = (mx >= mediumX && mx <= mediumX + levelBtnW && my >= mediumY && my <= mediumY + levelBtnH);
@@ -586,49 +811,95 @@ void iMouseMove(int mx, int my)
 
 void iMouse(int button, int state, int mx, int my)
 {
-    if (gameState == 0 && button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        if (hoverPlay) {
-            gameState = 1;
-            resetGame();
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        // Handle back button click in all states except main menu
+        if (gameState != 0 && mx >= backBtnX && mx <= backBtnX + backBtnW &&
+            my >= backBtnY && my <= backBtnY + backBtnH) {
+            gameState = 0;
+            if (gameState == 1) {
+                iPauseGame(); // Pause game timers when returning to main menu
+            }
+            return;
         }
-        else if (hoverHelp) {
-            gameState = 2;
+
+        // Handle main menu button clicks
+        if (gameState == 0) {
+            if (mx >= playX && mx <= playX + btnW && my >= playY && my <= playY + btnH) {
+                gameState = 1;
+                resetGame();
+            }
+            else if (mx >= helpX && mx <= helpX + btnW && my >= helpY && my <= helpY + btnH) {
+                gameState = 2;
+            }
+            else if (mx >= exitX && mx <= exitX + btnW && my >= exitY && my <= exitY + btnH) {
+                exit(0);
+            }
+            else if (mx >= continueX && mx <= continueX + btnW && my >= continueY && my <= continueY + btnH) {
+                gameState = 1;
+                iResumeTimer(physicsTimer);
+            }
+            else if (mx >= scoreX && mx <= scoreX + btnW && my >= scoreY && my <= scoreY + btnH) {
+                gameState = 4;
+            }
+            else if (mx >= levelX && mx <= levelX + btnW && my >= levelY && my <= levelY + btnH) {
+                gameState = GAME_STATE_LEVEL_SELECT;
+            }
         }
-        else if (hoverExit) {
-            exit(0);
-        }
-        else if (hoverContinue) {
-            gameState = 1;
-            iResumeTimer(physicsTimer);
-        }
-        else if (hoverScore) {
-            gameState = 4;
-        }
-        else if (hoverLevel) {
-            gameState = GAME_STATE_LEVEL_SELECT;
-        }
-    }
-    else if (gameState == GAME_STATE_LEVEL_SELECT && button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        if (hoverEasy) {
-            isHardLevel = false; // FIX: Set difficulty
-            gameState = 1;
-            resetGame();
-        }
-        else if (hoverMedium) {
-            isHardLevel = false;
-            gameState = 1;
-            resetGame();
-        }
-        else if (hoverHard) {
-            isHardLevel = true;
-            gameState = 1;
-            resetGame();
+        // Handle level select button clicks
+        else if (gameState == GAME_STATE_LEVEL_SELECT) {
+            if (mx >= easyX && mx <= easyX + levelBtnW && my >= easyY && my <= easyY + levelBtnH) {
+                isHardLevel = false;
+                gameState = 1;
+                resetGame();
+            }
+            else if (mx >= mediumX && mx <= mediumX + levelBtnW && my >= mediumY && my <= mediumY + levelBtnH) {
+                isHardLevel = false;
+                gameState = 1;
+                resetGame();
+            }
+            else if (mx >= hardX && mx <= hardX + levelBtnW && my >= hardY && my <= hardY + levelBtnH) {
+                isHardLevel = true;
+                gameState = 1;
+                resetGame();
+            }
         }
     }
 }
 
 void iKeyboard(unsigned char key)
 {
+
+if (isEnteringName) {
+        if (key == 13) { // Enter key
+            isEnteringName = false;
+            addHighScore(playerName, score);
+            gameState = 4; // Show score screen
+            nameCharIndex = 0;
+            playerName[0] = '\0';
+        }
+        else if (key == 8) { // Backspace
+            if (nameCharIndex > 0) {
+                nameCharIndex--;
+                playerName[nameCharIndex] = '\0';
+            }
+        }
+        else if (nameCharIndex < 49 && key >= 32 && key <= 126) { // Printable chars
+            playerName[nameCharIndex++] = key;
+            playerName[nameCharIndex] = '\0';
+        }
+        return;
+    }
+
+
+
+
+
+
+
+
+
+
+
     if (gameState == GAME_STATE_LEVEL_SELECT) {
         if (key == 'h' || key == 'b') {
             gameState = 0;
@@ -654,6 +925,17 @@ void iKeyboard(unsigned char key)
                 iPauseTimer(physicsTimer);
             }
         }
+
+        else if (key == 13) { // Enter key after game over
+            if (gameOver) {
+                isEnteringName = true;
+                playerName[0] = '\0';
+                nameCharIndex = 0;
+            }
+        }
+
+
+
     }
     else if (gameState == 2 || gameState == 3 || gameState == 4 || gameState == 5) {
         if (key == 'h' || key == 'b') {
@@ -731,14 +1013,24 @@ void iCleanup()
 }
 
 // ================== MAIN FUNCTION ==================
+int rotatingRectTimer;
 
 int main(int argc, char *argv[])
 {
     srand((unsigned)time(NULL));
     glutInit(&argc, argv);
 
+       iLoadImage(&backBtn, "back.png");
+    iResizeImage(&backBtn, backBtnW, backBtnH);
+
+    iLoadImage(&backBtnHover, "back_hover.png");
+    iResizeImage(&backBtnHover, backBtnW, backBtnH);
+
     iLoadImage(&helpImage, "helpbg.png");
     iResizeImage(&helpImage, 800, 533); // example size for 0.66 scale
+
+  rotatingRectTimer = iSetTimer(30, updateRotatingRectangles); // update every 30 ms
+
 
     iLoadImage(&scoreImage, "scorebg.png");
     iResizeImage(&scoreImage, 1040, 780); // example size for 1.3 scale
@@ -755,43 +1047,43 @@ int main(int argc, char *argv[])
     iResizeImage(&scoreDisplayImage, 300, 100); // example size
 
     iLoadImage(&background, "jjkrealm.png");
-    iResizeImage(&background, 1056, 704); // example size for 0.66 scale
+    iResizeImage(&background, SCREEN_WIDTH, SCREEN_HEIGHT); // example size for 0.66 scale
 
     iLoadImage(&play, "newgame.png");
-    iResizeImage(&play, 60, 60); // example size for 0.30 scale
+    iResizeImage(&play, 200, 100); // example size for 0.30 scale
 
     iLoadImage(&playHover, "newgamehover.png");
-    iResizeImage(&playHover, 60, 60);
+    iResizeImage(&playHover, 200, 100);
 
     iLoadImage(&help, "help.png");
-    iResizeImage(&help, 60, 60);
+    iResizeImage(&help,200 , 100);
 
     iLoadImage(&helpHover, "helphover.png");
-    iResizeImage(&helpHover, 60, 60);
+    iResizeImage(&helpHover, 200, 100);
 
     iLoadImage(&quit, "quit.png");
-    iResizeImage(&quit, 60, 60);
+    iResizeImage(&quit, 200, 100);
 
     iLoadImage(&quitHover, "exithover.png");
-    iResizeImage(&quitHover, 60, 60);
+    iResizeImage(&quitHover, 200, 100);
 
     iLoadImage(&cont, "continue.png");
-    iResizeImage(&cont, 60, 60);
+    iResizeImage(&cont, 200, 100);
 
     iLoadImage(&contHover, "continuehover.png");
-    iResizeImage(&contHover, 60, 60);
+    iResizeImage(&contHover, 200, 100);
 
     iLoadImage(&scoreBtn, "score.png");
-    iResizeImage(&scoreBtn, 60, 60);
+    iResizeImage(&scoreBtn, 200, 100);
 
     iLoadImage(&scoreBtnHover, "scorehover.png");
-    iResizeImage(&scoreBtnHover, 60, 60);
+    iResizeImage(&scoreBtnHover, 200, 100);
 
     iLoadImage(&level, "level.png");
-    iResizeImage(&level, 60, 60);
+    iResizeImage(&level, 200, 100);
 
     iLoadImage(&levelHover, "levelhover.png");
-    iResizeImage(&levelHover, 60, 60);
+    iResizeImage(&levelHover, 200, 100);
 
     for (int i = 0; i < GERM_FRAMES; i++) {
         char filename[50];
@@ -829,6 +1121,8 @@ int main(int argc, char *argv[])
         iLoadImage(&lowerPipeImages[i], "lowerpipe.png");
         iLoadImage(&upperPipeImages[i], "upperpipe.png");
     }
+
+      loadHighScores();
 
     resetGame();
     spawnGerms();
