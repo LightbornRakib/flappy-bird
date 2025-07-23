@@ -1,9 +1,11 @@
-
 #include "iGraphics.h"
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib> // Replaced <stdlib.h> for C++ style
+#include <ctime>   // Replaced <time.h> for C++ style
 #include <windows.h>
 #include <mmsystem.h>
+#include <string>   // Added for std::string
+#include <fstream>  // Added for std::ifstream and std::ofstream
+#include <sstream>  // Added for std::stringstream
 
 // ================== GAME CONSTANTS ==================
 #define N_CLOUDS 4
@@ -36,7 +38,6 @@
 #define GERM_FRAMES 3
 #ifndef MAX_TIMERS
 #define MAX_TIMERS 20
-
 #endif
 
 // Level button positions and sizes
@@ -44,6 +45,7 @@ int easyX = 500, easyY = 500;
 int mediumX = 700, mediumY = 500;
 int hardX = 900, hardY = 500;
 int levelBtnW = 150, levelBtnH = 60;
+int customFont;
 
 Image germFrames[GERM_FRAMES];
 int germFrameIndex = 0;
@@ -54,15 +56,12 @@ bool hoverMedium = false;
 bool hoverHard = false;
 
 bool isHardLevel = false;
-bool  isGamePaused = false;
-
+bool isGamePaused = false;
 
 Image backBtn, backBtnHover;
 int backBtnX = 125, backBtnY = 50;
 int backBtnW = 125, backBtnH = 50;
 bool hoverBack = false;
-
-
 
 float germ_x[N_GERMS];
 float germ_y[N_GERMS];
@@ -78,15 +77,12 @@ float circleRadius = 150;
 int rectWidth = 60;
 int rectHeight = 30;
 
-
 int germSpawnTimer;
 
 Image scoreDisplayImage;
 float beam_x[N_BEAMS];
 float beam_y[N_BEAMS];
 bool beam_active[N_BEAMS] = {false};
-
-
 
 int beamSpawnTimer;
 
@@ -145,33 +141,12 @@ int animTimer, physicsTimer, coinAnimTimer;
 int scoreScrollY = 0;
 const int scoreContentHeight = 1600;
 Image scoreImage;
-
-
-
-
-
-
-
-
-
-
-// FIX: Function prototypes
 void updateGame();
-void updateClouds();
-void updateCoins();
-void updateBeams();
-void updateGerms();
-void updateBirdAnimation();
-void updateCoinAnimation();
-void updateGermAnimation();
-void updateAll();
 
 // ================== GAME FUNCTIONS ==================
 
-
-
 typedef struct {
-    char name[50];
+    std::string name; // Changed to std::string
     int score;
 } HighScore;
 
@@ -179,31 +154,27 @@ HighScore highScores[5];
 
 // Variables for name input after game over
 bool isEnteringName = false;
-char playerName[50] = "";
+std::string playerName = ""; // Changed to std::string
 int nameCharIndex = 0;
 
-
-
-
 void loadHighScores() {
-    FILE *file = fopen("highscores.txt", "r");
-    if (!file) {
+    std::ifstream file("highscores.txt");
+    if (!file.is_open()) {
         // Initialize empty scores if file doesn't exist
         for (int i = 0; i < 5; i++) {
-            strcpy(highScores[i].name, "---");
+            highScores[i].name = "---";
             highScores[i].score = 0;
         }
         return;
     }
     for (int i = 0; i < 5; i++) {
-        if (fscanf(file, "%49s %d", highScores[i].name, &highScores[i].score) != 2) {
-            strcpy(highScores[i].name, "---");
+        if (!(file >> highScores[i].name >> highScores[i].score)) {
+            highScores[i].name = "---";
             highScores[i].score = 0;
         }
     }
-    fclose(file);
+    file.close();
 }
-
 
 void updateRotatingRectangles()
 {
@@ -241,20 +212,18 @@ void updateRotatingRectangles()
     }
 }
 
-
-
 // Function to save high scores to file
 void saveHighScores() {
-    FILE *file = fopen("highscores.txt", "w");
-    if (!file) return;
+    std::ofstream file("highscores.txt");
+    if (!file.is_open()) return;
     for (int i = 0; i < 5; i++) {
-        fprintf(file, "%s %d\n", highScores[i].name, highScores[i].score);
+        file << highScores[i].name << " " << highScores[i].score << "\n";
     }
-    fclose(file);
+    file.close();
 }
 
 // Insert new score into highScores array if qualifies
-void addHighScore(const char *name, int score) {
+void addHighScore(const std::string &name, int score) {
     // Find position to insert
     int pos = 5;
     for (int i = 0; i < 5; i++) {
@@ -270,16 +239,11 @@ void addHighScore(const char *name, int score) {
         highScores[i] = highScores[i - 1];
     }
     // Insert new score
-    strncpy(highScores[pos].name, name, 49);
-    highScores[pos].name[49] = '\0';
+    highScores[pos].name = name.substr(0, 49); // Ensure name is not too long
     highScores[pos].score = score;
 
     saveHighScores();
 }
-
-
-
-
 
 void safePauseTimer(int timerId) {
     if (timerId >= 0 && timerId < MAX_TIMERS) {
@@ -287,14 +251,12 @@ void safePauseTimer(int timerId) {
     }
 }
 
-// Keep only one definition of safeResumeTimer
 void safeResumeTimer(int timerId) {
     if (timerId >= 0 && timerId < MAX_TIMERS) {
         iResumeTimer(timerId);
     }
 }
 
-// Keep only one definition of iGetDeltaTime
 int iGetDeltaTime() {
     static int oldT = -1;
     int newT = glutGet(GLUT_ELAPSED_TIME);
@@ -304,8 +266,6 @@ int iGetDeltaTime() {
     return delta;
 }
 
-// Fix iPlaySound to avoid Unicode mismatch error:
-// Option 1: If your project is Unicode-enabled, keep this:
 void iPlaySound(const char *filename, bool loop = false)
 {
 #ifdef UNICODE
@@ -330,7 +290,6 @@ void iPauseGame() {
     safePauseTimer(beamSpawnTimer);
 }
 
-
 void iResumeGame() {
     isGamePaused = false;
     safeResumeTimer(animTimer);
@@ -340,8 +299,6 @@ void iResumeGame() {
     safeResumeTimer(beamSpawnTimer);
 }
 
-
-
 void updateGround()
 {
     ground_x -= PIPE_SPEED; // Move ground left at pipe speed
@@ -349,7 +306,6 @@ void updateGround()
         ground_x = 0; // Reset position to loop
     }
 }
-
 
 void spawnGerms()
 {
@@ -394,7 +350,7 @@ void updateGerms()
 void spawnBeams()
 {
     float baseX = SCREEN_WIDTH;
-    float lineY = rand() % (SCREEN_HEIGHT - 200);// Fixed y position for the line of beams
+    float lineY = rand() % (SCREEN_HEIGHT - 200); // Fixed y position for the line of beams
 
     for (int i = 0; i < N_BEAMS; i++) {
         beam_x[i] = baseX + i * (BEAM_WIDTH + 50); // space beams evenly with 50 px gap
@@ -420,7 +376,7 @@ void resetGame()
     bird_y = 400;
     bird_velocity = 0;
     gameOverSoundPlayed = false;
-      int totalGroups = N_PIPES / 4;
+    int totalGroups = N_PIPES / 4;
 
     int groupSpacing = SCREEN_WIDTH / 2;
 
@@ -455,6 +411,7 @@ void resetGame()
     gameOver = false;
     iResumeTimer(physicsTimer);
 }
+
 void updateClouds()
 {
     for (int i = 0; i < N_CLOUDS; i++) {
@@ -488,7 +445,6 @@ void updateBirdAnimation()
     flyingFrame = (flyingFrame + 1) % N_FRAMES;
 }
 
-// FIX: Consolidated update function
 void updateAll()
 {
     if (gameState != 1) return;
@@ -497,10 +453,8 @@ void updateAll()
     updateBeams();
     updateGerms();
     updateGame();
-    updateGround(); 
+    updateGround();
 }
-
-// ... existing code ...
 
 void updateGame()
 {
@@ -510,7 +464,6 @@ void updateGame()
     if (bird_velocity < -2 * JUMP_VELOCITY) bird_velocity = -2 * JUMP_VELOCITY;
     bird_y += bird_velocity;
 
-  
     if (bird_y < 0) {
         bird_y = 0;
         gameOver = true;
@@ -598,13 +551,13 @@ void updateGame()
         }
     }
 }
+
 // ================== DRAW FUNCTION ==================
 
 void iDraw()
 {
-  
     iClear();
-       if (gameState != 0) {
+    if (gameState != 0) {
         iShowLoadedImage(backBtnX, backBtnY, hoverBack ? &backBtnHover : &backBtn);
     }
 
@@ -658,9 +611,9 @@ void iDraw()
             iShowLoadedImage((int)coin_x[i], (int)coin_y[i], &coinFrames[i][coinFrameIndex[i]]);
         }
 
-        for (int i = 0; i < N_PIPES; i++) {iShowLoadedImage(pipe_x[i], 0, &lowerPipeImages[i]);
-        iShowLoadedImage(pipe_x[i], pipe_gap_y[i] + PIPE_GAP, &upperPipeImages[i]);
-            
+        for (int i = 0; i < N_PIPES; i++) {
+            iShowLoadedImage(pipe_x[i], 0, &lowerPipeImages[i]);
+            iShowLoadedImage(pipe_x[i], pipe_gap_y[i] + PIPE_GAP, &upperPipeImages[i]);
         }
 
         if (!gameOver) {
@@ -672,7 +625,8 @@ void iDraw()
                 iShowLoadedImage((int)germ_x[i], (int)germ_y[i], &germFrames[germFrameIndex]);
             }
         }
-  float rad_1 = rectAngle1 * 3.14159265f / 180.0f;
+
+        float rad_1 = rectAngle1 * 3.14159265f / 180.0f;
         float rad_2 = rectAngle2 * 3.14159265f / 180.0f;
 
         float rect1X = circleCenterX + circleRadius * cos(rad_1) - rectWidth / 2;
@@ -683,59 +637,51 @@ void iDraw()
 
         iSetColor(255, 0, 0); // red color
         iFilledRectangle((int)rect1X, (int)rect1Y, rectWidth, rectHeight);
-        iFilledRectangle((int)rect2X, (int)rect2Y, rectWidth, rectHeight);  
-
+        iFilledRectangle((int)rect2X, (int)rect2Y, rectWidth, rectHeight);
 
         iShowLoadedImage((int)ground_x, 0, &groundImage);
         iShowLoadedImage((int)ground_x + SCREEN_WIDTH, 0, &groundImage);
 
         iSetColor(0, 0, 0);
-        char scoreText[20];
-        if (isHardLevel)
-            sprintf(scoreText, "Score: Hard %d", score);
-        else
-            sprintf(scoreText, "Score: Medium %d", score);
-        iText(10, SCREEN_HEIGHT - 130, scoreText);
+        std::string scoreText = isHardLevel ? "Score: Hard " + std::to_string(score) : "Score: Medium " + std::to_string(score);
 
         if (isEnteringName) {
-        // Dim the background with a semi-transparent black overlay
-        iSetColor(0, 0, 150); // RGBA, 150 alpha for transparency
-        iFilledRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+            // Dim the background with a semi-transparent black overlay
+            iSetColor(0, 0, 150); // RGBA, 150 alpha for transparency
+            iFilledRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-        // Draw input box background
-        int boxWidth = 400;
-        int boxHeight = 100;
-        int boxX = (SCREEN_WIDTH - boxWidth) / 2;
-        int boxY = (SCREEN_HEIGHT - boxHeight) / 2;
-        iSetColor(50, 50, 50);
-        iFilledRectangle(boxX, boxY, boxWidth, boxHeight);
+            // Draw input box background
+            int boxWidth = 400;
+            int boxHeight = 100;
+            int boxX = (SCREEN_WIDTH - boxWidth) / 2;
+            int boxY = (SCREEN_HEIGHT - boxHeight) / 2;
+            iSetColor(50, 50, 50);
+            iFilledRectangle(boxX, boxY, boxWidth, boxHeight);
 
-        // Draw input box border
-        iSetColor(255, 255, 255);
-        iRectangle(boxX, boxY, boxWidth, boxHeight);
+            // Draw input box border
+            iSetColor(255, 255, 255);
+            iRectangle(boxX, boxY, boxWidth, boxHeight);
 
-        // Draw prompt text
-        iText(boxX + 20, boxY + boxHeight - 30, "Game Over! Enter your name:");
+            // Draw prompt text
+            iText(boxX + 20, boxY + boxHeight - 30, "Game Over! Enter your name:");
 
-        // Draw player name text
-        iText(boxX + 20, boxY + boxHeight / 2 - 10, playerName);
+            // Draw player name text
+            iText(boxX + 20, boxY + boxHeight / 2 - 10, playerName.c_str());
 
-        // Draw blinking cursor
-        static int blinkTimer = 0;
-        blinkTimer = (blinkTimer + 1) % 60; // roughly 1 second cycle at 60 FPS
-        if (blinkTimer < 30) {
-            int charWidth = 12;
-             int cursorX = boxX + 20 + (int)(strlen(playerName) * charWidth);
-            int cursorY = boxY + boxHeight / 2 - 10;
-            iLine(cursorX, cursorY, cursorX, cursorY + 20);
+            // Draw blinking cursor
+            static int blinkTimer = 0;
+            blinkTimer = (blinkTimer + 1) % 60; // roughly 1 second cycle at 60 FPS
+            if (blinkTimer < 30) {
+                int charWidth = 12;
+                int cursorX = boxX + 20 + (int)(playerName.length() * charWidth);
+                int cursorY = boxY + boxHeight / 2 - 10;
+                iLine(cursorX, cursorY, cursorX, cursorY + 20);
+            }
+
+            // Draw instructions
+            iText(boxX + 20, boxY + 10, "Press Enter to submit, Backspace to delete");
         }
-
-        // Draw instructions
-        iText(boxX + 20, boxY + 10, "Press Enter to submit, Backspace to delete");
-    }
-
-
-      else  if (gameOver) {
+        else if (gameOver) {
             int imgX = SCREEN_WIDTH / 2 - 400;
             int imgY = SCREEN_HEIGHT / 2 - 250;
             iShowLoadedImage(imgX, imgY, &gameOverImage);
@@ -752,17 +698,14 @@ void iDraw()
         if (scoreScrollY > scoreContentHeight - SCREEN_HEIGHT)
             scoreScrollY = scoreContentHeight - SCREEN_HEIGHT;
         iShowLoadedImage(0, SCREEN_HEIGHT - scoreContentHeight + scoreScrollY, &scoreImage);
-    // Draw high scores
+        // Draw high scores
         iSetColor(255, 255, 255);
         int startY = SCREEN_HEIGHT - 400;
         iText(600, startY + 40, "High Scores:");
         for (int i = 0; i < 5; i++) {
-            char buf[100];
-            sprintf(buf, "%d. %s - %d", i + 1, highScores[i].name, highScores[i].score);
-            iText(600, startY - i * 30, buf);
+            std::string buf = std::to_string(i + 1) + ". " + highScores[i].name + " - " + std::to_string(highScores[i].score);
+            iText(600, startY - i * 30, buf.c_str());
         }
-    
-    
     }
     else if (gameState == 5) {
         iText(300, 300, "Level Screen. Press 'H' to return.");
@@ -868,37 +811,26 @@ void iMouse(int button, int state, int mx, int my)
 
 void iKeyboard(unsigned char key)
 {
-
-if (isEnteringName) {
+    if (isEnteringName) {
         if (key == 13) { // Enter key
             isEnteringName = false;
             addHighScore(playerName, score);
             gameState = 4; // Show score screen
             nameCharIndex = 0;
-            playerName[0] = '\0';
+            playerName = "";
         }
         else if (key == 8) { // Backspace
             if (nameCharIndex > 0) {
                 nameCharIndex--;
-                playerName[nameCharIndex] = '\0';
+                playerName.pop_back();
             }
         }
         else if (nameCharIndex < 49 && key >= 32 && key <= 126) { // Printable chars
-            playerName[nameCharIndex++] = key;
-            playerName[nameCharIndex] = '\0';
+            playerName += key;
+            nameCharIndex++;
         }
         return;
     }
-
-
-
-
-
-
-
-
-
-
 
     if (gameState == GAME_STATE_LEVEL_SELECT) {
         if (key == 'h' || key == 'b') {
@@ -925,17 +857,13 @@ if (isEnteringName) {
                 iPauseTimer(physicsTimer);
             }
         }
-
         else if (key == 13) { // Enter key after game over
             if (gameOver) {
                 isEnteringName = true;
-                playerName[0] = '\0';
+                playerName = "";
                 nameCharIndex = 0;
             }
         }
-
-
-
     }
     else if (gameState == 2 || gameState == 3 || gameState == 4 || gameState == 5) {
         if (key == 'h' || key == 'b') {
@@ -1020,7 +948,7 @@ int main(int argc, char *argv[])
     srand((unsigned)time(NULL));
     glutInit(&argc, argv);
 
-       iLoadImage(&backBtn, "back.png");
+    iLoadImage(&backBtn, "back.png");
     iResizeImage(&backBtn, backBtnW, backBtnH);
 
     iLoadImage(&backBtnHover, "back_hover.png");
@@ -1029,8 +957,7 @@ int main(int argc, char *argv[])
     iLoadImage(&helpImage, "helpbg.png");
     iResizeImage(&helpImage, 800, 533); // example size for 0.66 scale
 
-  rotatingRectTimer = iSetTimer(30, updateRotatingRectangles); // update every 30 ms
-
+    rotatingRectTimer = iSetTimer(30, updateRotatingRectangles); // update every 30 ms
 
     iLoadImage(&scoreImage, "scorebg.png");
     iResizeImage(&scoreImage, 1040, 780); // example size for 1.3 scale
@@ -1056,7 +983,7 @@ int main(int argc, char *argv[])
     iResizeImage(&playHover, 200, 100);
 
     iLoadImage(&help, "help.png");
-    iResizeImage(&help,200 , 100);
+    iResizeImage(&help, 200, 100);
 
     iLoadImage(&helpHover, "helphover.png");
     iResizeImage(&helpHover, 200, 100);
@@ -1086,9 +1013,8 @@ int main(int argc, char *argv[])
     iResizeImage(&levelHover, 200, 100);
 
     for (int i = 0; i < GERM_FRAMES; i++) {
-        char filename[50];
-        sprintf(filename, "kit (%d).png", i + 1);
-        iLoadImage(&germFrames[i], filename);
+        std::string filename = "kit (" + std::to_string(i + 1) + ").png";
+        iLoadImage(&germFrames[i], filename.c_str());
         iResizeImage(&germFrames[i], GERM_WIDTH, GERM_HEIGHT);
     }
 
@@ -1096,17 +1022,15 @@ int main(int argc, char *argv[])
     iResizeImage(&BG, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     for (int i = 0; i < N_FRAMES; i++) {
-        char filename[50];
-        sprintf(filename, "bird (%d).png", i + 1);
-        iLoadImage(&birdFrames[i], filename);
+        std::string filename = "bird (" + std::to_string(i + 1) + ").png";
+        iLoadImage(&birdFrames[i], filename.c_str());
         iResizeImage(&birdFrames[i], BIRD_WIDTH + 10, BIRD_HEIGHT + 10);
     }
 
     for (int i = 0; i < N_COINS; i++) {
         for (int f = 0; f < COIN_FRAMES; f++) {
-            char filename[50];
-            sprintf(filename, "coin (%d).png", f + 1);
-            iLoadImage(&coinFrames[i][f], filename);
+            std::string filename = "coin (" + std::to_string(f + 1) + ").png";
+            iLoadImage(&coinFrames[i][f], filename.c_str());
             iResizeImage(&coinFrames[i][f], COIN_WIDTH, COIN_HEIGHT);
         }
     }
@@ -1122,7 +1046,7 @@ int main(int argc, char *argv[])
         iLoadImage(&upperPipeImages[i], "upperpipe.png");
     }
 
-      loadHighScores();
+    loadHighScores();
 
     resetGame();
     spawnGerms();
